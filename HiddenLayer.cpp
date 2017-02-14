@@ -7,8 +7,8 @@
 HiddenLayer::HiddenLayer(MTRand& random, int nIn, int nH, double B) 
 {
     
-    n_in = nIn;
-    n_h = nH;
+    n_in = int(nIn);
+    n_h = int(nH);
     bound = B;
     
     W.setZero(n_in,n_h);

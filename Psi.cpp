@@ -7,7 +7,7 @@
 PsiLayer::PsiLayer(MTRand& random, int nIN, double B) 
 {
     
-    n_in = nIN;
+    n_in = int(nIN);
     bound = B;
 
     Z.setZero(n_in,2);
@@ -15,7 +15,7 @@ PsiLayer::PsiLayer(MTRand& random, int nIN, double B)
 
     for (int i=0; i<n_in; i++) {
         Z(i,0) = bound*(2.0 * random.rand() - 1.0);
-        Z(i,1) = bound*(2.0 * random.rand() - 1.0);
+        //Z(i,1) = bound*(2.0 * random.rand() - 1.0);
     }
 }
 
@@ -26,16 +26,17 @@ PsiLayer::PsiLayer(MTRand& random, int nIN, double B)
 
 Vector2d PsiLayer::getWF(const VectorXd & input) {
     
-    Vector2d psi;
+    Vector2d P;
+    Vector2d activation;
 
-    psi = Z.transpose() * input + c; 
+    activation = Z.transpose() * input + c; 
     
-    if (psi(1) >= 0) 
-        psi(1) = 1.0;
-    else
-        psi(1) = -1.0;
+    P(0) = activation(0);
+ 
+    P(1) = 1.0;
+    //P(1) = (1.0 - exp(-2.0*activation(1))) / (1.0 + exp(-2.0*activation(1)));
     
-    return psi;
+    return P;
 }
 
 //*****************************************************************************
