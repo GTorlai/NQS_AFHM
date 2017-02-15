@@ -60,7 +60,8 @@ int main(int argc, char* argv[]) {
     Hamiltonian H(Parameters["D"],Parameters["L"],"chain"); 
     
     // Initialize the Hamiltonian
-    H.initialize(random,"Ferromagnetic",1.0,Features["sH"]); 
+    //H.initialize(random,"Ferromagnetic",1.0,Features["sH"]); 
+    H.initialize(random,Features["sH"]);
 
     // Construct the NQS class 
     NeuralQuantumState NQS(random,H.N,
@@ -72,19 +73,10 @@ int main(int argc, char* argv[]) {
                            Features["obj"],
                            Features["sNN"]); 
     
+    ofstream fout("foo.txt");
+    
     NQS.loadExactEnergy(model,int(Parameters["D"]));
-    //NQS.SGD_Plain(random,H,PL,HL); 
-    NQS.SGD_Momentum(random,H,PL,HL); 
- 
+    //NQS.loadExactWF(model,Features["sH"],int(Parameters["D"]));
+    NQS.optimizeNQS(random,fout,H,PL,HL);
     
-    
-    
-    
-    //MatrixXcd A;
-    //A.setZero(2,2);
-    //A(0,0).real(1);
-    //
-    //cout << A(0,0).real() << endl;
-     
-     
 }

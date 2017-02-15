@@ -1,8 +1,8 @@
 #ifndef NQS_H
 #define NQS_H
 
-#include "TFIM.cpp"
-
+//#include "TFIM.cpp"
+#include "AFHM.cpp"
 class NeuralQuantumState {
     
     public:
@@ -27,10 +27,11 @@ class NeuralQuantumState {
         VectorXd gradS;                 // Sign Gradient
 
         double Energy;                  // Energy
-
+        double avgSign;
         double ExactEnergy;             // Exact Energy (ed-dmrg)
         double deltaEnergy;             // Relative error on the energy
-
+        
+        VectorXd exactWF;
         // Constructor
         NeuralQuantumState(MTRand & random, int N_,int MCS_, double lr_,
                 int ep, PsiLayer& PL, HiddenLayer& HL,
@@ -39,6 +40,9 @@ class NeuralQuantumState {
         // Core Functions
         void reset();
         void loadExactEnergy(string& model, int D); 
+        void loadExactWF(string& model, string& sign, int D);
+        double getOverlap(PsiLayer& PL, HiddenLayer& HL);
+
 
         VectorXd getEnergyGradient(MTRand & random,Hamiltonian& H, 
                                    PsiLayer& PL,HiddenLayer& HL); 
@@ -49,10 +53,10 @@ class NeuralQuantumState {
 
         void SGD_Plain(MTRand & random,Hamiltonian& H,PsiLayer& PL, HiddenLayer& HL);
         void SGD_Momentum(MTRand & random,Hamiltonian& H,PsiLayer& PL, HiddenLayer& HL);
-        void SGD_AdaGrad(Hamiltonian& H,PsiLayer& PL, HiddenLayer& HL);
-        void SGD_AdaDelta(Hamiltonian& H,PsiLayer& PL, HiddenLayer& HL);
-        void SVRG(Hamiltonian& H,PsiLayer& PL, HiddenLayer& HL);
-        void SR(Hamiltonian& H,PsiLayer& PL, HiddenLayer& HL, int e_);
+        void SGD_AdaGrad(MTRand & random,Hamiltonian& H,PsiLayer& PL, HiddenLayer& HL);
+        void SGD_AdaDelta(MTRand & random,Hamiltonian& H,PsiLayer& PL, HiddenLayer& HL);
+        void SVRG(MTRand & random,Hamiltonian& H,PsiLayer& PL, HiddenLayer& HL);
+        void SR(MTRand & random,Hamiltonian& H,PsiLayer& PL, HiddenLayer& HL, int e_);
 
         void optimizeNQS(MTRand & random,ofstream & file,
                    Hamiltonian& H,PsiLayer& PL, HiddenLayer& HL);

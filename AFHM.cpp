@@ -1,4 +1,4 @@
-#include "TFIM.h"
+#include "AFHM.h"
 
 //*****************************************************************************
 // Constructor 
@@ -40,30 +40,23 @@ Hamiltonian::Hamiltonian(int D_, int L_, string latticeType)
 // Initialize the Transverse-Field Ising Hamiltonian 
 //*****************************************************************************
 
-void Hamiltonian::initialize(MTRand & random,string interaction,double h_,string sign)
+void Hamiltonian::initialize(MTRand & random,string sign)
 {
 
-    if (interaction.compare("Ferromagnetic") == 0) {
-        J = 1.0;
-    }
-
-    if (interaction.compare("Antiferromagnetic") ==0) {
-        J = -1.0;
-    }
-
     if (sign.compare("OFF") == 0) {
-        h = h_;
+        Jxy = -1.0;
     }
 
     if (sign.compare("ON") == 0) {
-        h = -h_;
+        Jxy = 1.0;
     }
 
-    for (int i=0; i<N; i++) {
-        if (random.rand() > 0.5)
-            spins(i) = 1.0;
-        else
-            spins(i) = -1.0;
+    for (int i=0; i<N/2; i++) {
+        //if (random.rand() > 0.5)
+        //    spins(i) = 1.0;
+        //else
+        spins(2*i)   = 1.0;
+        spins(2*i+1) = -1.0;
     }
 }
 
@@ -84,9 +77,10 @@ void Hamiltonian::printLatticeInfos()
 // Flip a spin at some site 
 //*****************************************************************************
 
-void Hamiltonian::flip(int& site) {
+void Hamiltonian::flip(int& site1,int& site2) {
 
-    spins(site) *= -1.0;
+    spins(site1) *= -1.0;
+    spins(site2) *= -1.0;
 
 }
 
@@ -129,19 +123,22 @@ double Hamiltonian::getLocalEnergy(PsiLayer& PL, HiddenLayer& HL)
     for (int i=0; i<N; i++) {
         
         // Compute diagonal contribution at site i
-        e += -J * spins(i)*spins(NearestNeighbors(i));
+        e += 0.25*spins(i)*spins(NearestNeighbors(i));
         
-        // Flip spin at site i
-        flip(i);
+        if (spins(NearestNeighbors(i)) * spins(i) < 0) {
+            
+            // Flip spin at site i
+            flip(i,NearestNeighbors(i));
 
-        // Compute the new wavefunction
-        Psi_flip = getWaveFunction(PL,HL);
+            // Compute the new wavefunction
+            Psi_flip = getWaveFunction(PL,HL);
         
-        // Compute off-diagonal contribution at site i
-        e += -h * (Psi_flip(1) / Psi(1)) *exp(Psi_flip(0) - Psi(0));
-        //e += -h * exp(Psi_flip(0) - Psi(0));
-        // Flip the spin back
-        flip(i);
+            // Compute off-diagonal contribution at site i
+            e += 0.5 * Jxy * (Psi_flip(1) / Psi(1)) *exp(Psi_flip(0) - Psi(0));
+            
+            // Flip the spin back
+            flip(i,NearestNeighbors(i));
+        }
     }
  
     return e;
@@ -159,26 +156,32 @@ void Hamiltonian::VQMC_sweep(MTRand & random, PsiLayer& PL, HiddenLayer & HL)
     Vector2d Psi;
     Vector2d Psi_prime;
     double q;
+    int index;
 
-    int site;
+    int site1,site2;
 
     // Compute the wave-functions
     Psi = getWaveFunction(PL,HL);
  
     for (int i=0; i<N; i++) {
         
-        // Pick a random site in the system
-        site = random.randInt(N-1);
-        flip(site);
+        do {
+            // Pick two random site in the system
+            site1 = random.randInt(N-1);
+            site2 = random.randInt(N-1);
+            index = spins(site1) * spins(site2);
+        } while (index > 0);
+
+        flip(site1,site2);
 
         Psi_prime = getWaveFunction(PL,HL);
 
-        //q = ((Psi_prime(1)*Psi_prime(1))/(Psi(1)*Psi(1))) * exp(2*(Psi_prime(0) - Psi(0)));
-        q = exp(2*(Psi_prime(0) - Psi(0)));
+        q = ((Psi_prime(1)*Psi_prime(1))/(Psi(1)*Psi(1))) * exp(2*(Psi_prime(0) - Psi(0)));
+        //q = exp(2*(Psi_prime(0) - Psi(0)));
         
         // REJECT
         if (random.rand() > q) {
-            flip(site);
+            flip(site1,site2);
         }
 
         // ACCEPT
@@ -189,81 +192,4 @@ void Hamiltonian::VQMC_sweep(MTRand & random, PsiLayer& PL, HiddenLayer & HL)
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//double NeuralQuantumState::getLocalEnergy(PsiLayer& PL, HiddenLayer& HL) {
-//    
-//    double e_ = 0.0;
-//    Vector2d Psi_;
-//    Vector2d Psi_flip_;
-//    
-//    Psi_ = getPsi(PL,HL);
-//    
-//    for (int i=0; i<L; i++) {
-//        
-//        e_ += spins(i)*spins(NN(i));
-//        
-//        if (spins(NN(i)) == (-1.0*spins(i))) {
-//            spins(i)   *= -1.0;
-//            spins(NN(i)) *= -1.0;
-//            Psi_flip_ = getPsi(PL,HL);
-//            
-//            e_ += 0.5 * (Psi_(0)/Psi_flip_(0)) * (Psi_(1)/Psi_flip_(1));
-//            
-//            spins(i)   *= -1.0;
-//            spins(NN(i)) *= -1.0;
-//        }
-//    }
-//
-//    //for (int i=0; i<L-1; i++) {
-//    //    
-//    //    e_ += spins(i)*spins(i+1);
-//    //    
-//    //    if (spins(i+1) == (-1.0*spins(i))) {
-//    //        spins(i)   *= -1.0;
-//    //        spins(i+1) *= -1.0;
-//    //        Psi_flip_ = getPsi(PL,HL);
-//    //        
-//    //        e_ += 0.5 * (Psi_(0)/Psi_flip_(0)) * (Psi_(1)/Psi_flip_(1));
-//    //        
-//    //        spins(i)   *= -1.0;
-//    //        spins(i+1) *= -1.0;
-//    //    }
-//    //}
-//    //
-//    //e_ += spins(L-1)*spins(0);
-//    //    
-//    //if (spins(0) == (-1.0*spins(L-1))) {
-//    //    spins(L-1)   *= -1.0;
-//    //    spins(0) *= -1.0;
-//    //    Psi_flip_ = getPsi(PL,HL);
-//    //    
-//    //    e_ += 0.5 * (Psi_(0)/Psi_flip_(0)) * (Psi_(1)/Psi_flip_(1));
-//    //    
-//    //    spins(L-1)   *= -1.0;
-//    //    spins(0) *= -1.0;
-//    //}
-// 
-//    return e_;
-//}
-//
 

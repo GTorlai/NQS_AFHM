@@ -2,6 +2,8 @@
 #include <Eigen/Dense>
 #include <algorithm>
 #include <iomanip>
+#include <bitset>
+
 //*****************************************************************************
 // Constructor 
 //*****************************************************************************
@@ -34,10 +36,10 @@ NeuralQuantumState::NeuralQuantumState(
     n_in = N;
     n_h  = HL.n_h;
     
-    if (sign.compare("on") == 0) 
-        n_P  = int(n_h*(n_in+3));
-    else
-        n_P  = int(n_h*(n_in+2));
+    //if (sign.compare("on") == 0) 
+    n_P  = int(n_h*(n_in+3)+2);
+    //else
+    //    n_P  = int(n_h*(n_in+2));
 
     gradE.setZero(n_P);
         
@@ -85,6 +87,81 @@ void NeuralQuantumState::loadExactEnergy(string& model, int D)
 
 }
 
+void NeuralQuantumState::loadExactWF(string& model, string& sign,int D)
+{
+
+    string fileName;
+    fileName = "data/ed-dmrg/wf_";
+    fileName += boost::str(boost::format("%d") % D);
+    fileName += "d";
+    fileName += model;
+    fileName += "_L";
+    fileName += boost::str(boost::format("%d") % N);
+    fileName += "_sign" + sign;
+    fileName += ".txt";
+
+    ifstream fin(fileName);
+
+    double e;
+    double temp; 
+    
+    int dim = pow(2,N);
+    
+    exactWF.setZero(dim);
+
+
+    for (int i=0; i<dim; i++) {
+        fin >> exactWF(i);
+        
+    }
+
+}
+
+
+double NeuralQuantumState::getOverlap(PsiLayer& PL, HiddenLayer& HL) 
+{
+
+    double overlap= 0.0;
+    double temp=0.0;
+    double Z = 0.0;
+    int dim = pow(2,N);
+    
+    VectorXd spin;
+    spin.setZero(N);
+
+    Vector2d Psi;
+
+    VectorXd psi;
+    psi.setZero(dim);
+
+    bitset<4> spinBit;
+
+    for (int i=0; i<dim; i++){
+
+        spinBit = i;
+        
+        for (int j=0; j<N; j++) {
+            spin(N-1-j) = spinBit[j];
+        }
+        
+        Psi = PL.getWF(HL.forward_pass(spin));
+        
+        psi(i) = exp(Psi(0));
+
+        temp += psi(i) * exactWF(i);
+        
+        Z += psi(i)*psi(i);
+    }
+
+    overlap = temp/sqrt(Z);
+    //overlap = psi(1) / sqrt(Z);
+    return overlap;
+
+
+
+}
+
+
 
 //*****************************************************************************
 // Compute the gradient of the energy w.r.t. variational parameters 
@@ -103,17 +180,17 @@ VectorXd NeuralQuantumState::getEnergyGradient(MTRand & random,Hamiltonian& H,
     Oe.setZero(n_P);
      
     VectorXd h;
+    Vector2d Psi;
     double eL;
-    double E;
+    double E=0.0;
+    double sign=0.0; 
+    int p;
+    double eta = -0.25; 
     
-    int c;
- 
     // Equilibration Stage
-    //for (int n=0; n<eq; n++) {
-    //    
-    //    H.VQMC_sweep(random,PL,HL); 
-    //        
-    //} 
+    for (int n=0; n<eq; n++) {
+        H.VQMC_sweep(random,PL,HL); 
+    } 
     
     // Compute statistics for the energy gradient
     for (int n=0; n<MCS; n++) {
@@ -122,47 +199,74 @@ VectorXd NeuralQuantumState::getEnergyGradient(MTRand & random,Hamiltonian& H,
         
         // Compute Hidden Layer state
         h = HL.forward_pass(H.spins);
-
+        Psi = PL.getWF(h);
+        
         // Compute Local Energy
         eL = H.getLocalEnergy(PL,HL);
-        c = 0;
-        
+        p = 0;
+          
         // Accumulate statistics of O on W
         for (int k=0; k<n_in; k++) {
             for (int i=0; i<n_h; i++) {
-                O(c)  += h(i)*(1.0-h(i))*PL.Z(i,0)*H.spins(k);
-                Oe(c) += h(i)*(1.0-h(i))*PL.Z(i,0)*H.spins(k)*eL;
-                c++;
+                O(p)  += h(i)*(1.0-h(i))*PL.Z(i,0)*H.spins(k);
+                //O(p)  += 2*h(i)*(1.0-h(i))*PL.Z(i,1)*H.spins(k)*(1.0-Psi(1));
+                //O(p)  += -2.0*eta*(Psi(1)-1.0)*(Psi(1)-1.0)*Psi(1)*h(i)*(1.0-h(i))*PL.Z(i,1)*H.spins(k);
+                Oe(p) += h(i)*(1.0-h(i))*PL.Z(i,0)*H.spins(k)*eL;
+                //Oe(p) += 2*h(i)*(1.0-h(i))*PL.Z(i,1)*H.spins(k)*eL*(1.0-Psi(1));
+                //Oe(p)  += -2.0*eta*(Psi(1)-1.0)*(Psi(1)-1.0)*Psi(1)*eL*h(i)*(1.0-h(i))*PL.Z(i,1)*H.spins(k); 
+                p++;
             }
         }
         
         // Accumulate statistics of O on b
         for (int i=0; i<n_h; i++) {
-            O(c)  += h(i)*(1.0-h(i))*PL.Z(i,0);
-            Oe(c) += h(i)*(1.0-h(i))*PL.Z(i,0)*eL;
-            c++;
+            O(p)  += h(i)*(1.0-h(i))*PL.Z(i,0);
+            //O(p)  += 2*h(i)*(1.0-h(i))*PL.Z(i,1)*(1.0-Psi(1));
+            //O(p)  += -2*eta*h(i)*(1.0-h(i))*PL.Z(i,1)*(Psi(1)-1.0)*(Psi(1)-1.0)*Psi(1);
+            Oe(p) += h(i)*(1.0-h(i))*PL.Z(i,0)*eL;
+            //Oe(p) += 2*h(i)*(1.0-h(i))*PL.Z(i,1)*eL*(1.0-Psi(1));
+            //Oe(p)  += -2*eta*h(i)*(1.0-h(i))*PL.Z(i,1)*(Psi(1)-1.0)*(Psi(1)-1.0)*Psi(1)*eL;
+            p++;
         }
      
         // Accumulate statistics of O on Z
         for (int i=0;i<n_h; i++) {
-            O(c)  += h(i);
-            Oe(c) += h(i)*eL;
-            c++;
+            O(p)  += h(i);
+            Oe(p) += h(i)*eL;
+            p++;
         }
+        //for (int i=0;i<n_h; i++) {
+        //    O(p)  += 2*h(i)*(1.0-Psi(1));
+        //    Oe(p) += 2*h(i)*eL*(1.0-Psi(1));
+        //    //O(p)  += -2*eta*h(i)*(Psi(1)-1.0)*(Psi(1)-1.0)*Psi(1);
+        //    //Oe(p) += -2*eta*h(i)*eL*(Psi(1)-1.0)*(Psi(1)-1.0)*Psi(1);
+        //    
+        //    p++;
+        //}
         
+        // Accumulate statistics of O on c
+        O(p)  += 1;
+        Oe(p) += eL;
+        //p++;
+        //O(p)  += 2*(1.0-Psi(1));
+        //Oe(p) += 2*eL*(1.0-Psi(1));
+ 
+ 
         //cout << eL << endl << endl;
         // Accumulate statistics for energy    
         E += eL;
+        sign += Psi(1);
     }
      
-    Energy = E/double(N*MCS);
+    Energy  = E/double(N*MCS);
+    avgSign = sign/double(MCS);
     
-    deltaEnergy = abs((Energy-ExactEnergy) / ExactEnergy);
+    deltaEnergy = abs(Energy-ExactEnergy) / abs(ExactEnergy);
 
     // Compute the gradient of the energy
-    for (int c=0; c<n_P; c++) {
+    for (int p=0; p<n_P; p++) {
         
-        gE(c) = 2*(Oe(c)/(double(MCS))-O(c)*E/(double(MCS*MCS)));
+        gE(p) = 2*(Oe(p)/(double(MCS))-O(p)*E/(double(MCS*MCS)));
     }
 
     return gE;
@@ -176,24 +280,35 @@ VectorXd NeuralQuantumState::getEnergyGradient(MTRand & random,Hamiltonian& H,
 void NeuralQuantumState::updateParameters(PsiLayer& PL, HiddenLayer& HL,
                                           VectorXd& DELTA) {
         
-    int c = 0;
+    int p = 0;
 
     for (int k=0; k<n_in; k++) {
         for (int i=0; i<n_h; i++) {
-            HL.W(k,i) += DELTA(c); 
-            c++;
+            HL.W(k,i) += DELTA(p); 
+            p++;
         }
     }
     
     for (int i=0; i<n_h; i++) {
-        HL.b(i) += DELTA(c);
-        c++;
+        HL.b(i) += DELTA(p);
+        p++;
     }
 
     for (int i=0; i<n_h; i++) {
-        PL.Z(i) += DELTA(c);
-        c++;
-    }        
+        PL.Z(i,0) += DELTA(p);
+        p++;
+    }
+    
+    for (int i=0; i<n_h; i++) {
+        PL.Z(i,1) += DELTA(p);
+        p++;
+    }
+    
+    for (int j=0; j<2; j++) {
+        PL.c(j) += DELTA(p);
+        p++;
+    }
+
 }
 
 
@@ -210,10 +325,10 @@ void NeuralQuantumState::SGD_Plain(MTRand & random, Hamiltonian& H,PsiLayer& PL,
         gE = getEnergyGradient(random,H,PL,HL);
         delta = -lr*gE;
         updateParameters(PL,HL,delta);
-        //cout << HL.W << endl;
-        //cout << HL.W(0,0) << endl;
-        cout << "Epoch # " << e << "\tGS Energy =  " << Energy;
-        cout << "Error = " << setprecision(8) << deltaEnergy << endl;
+        cout << "Epoch # " << e << "\tEnergy =  " << Energy;
+        cout << "\tError = " << setprecision(8) << deltaEnergy;
+        cout << endl;
+ 
     }
 }
 
@@ -223,7 +338,7 @@ void NeuralQuantumState::SGD_Momentum(MTRand & random, Hamiltonian& H,PsiLayer& 
 
     VectorXd gE(n_P);
     VectorXd delta;
-    
+    double overlap;
     delta.setZero(n_P); 
     
     for (int e=0; e<epochs; e++) {
@@ -231,24 +346,112 @@ void NeuralQuantumState::SGD_Momentum(MTRand & random, Hamiltonian& H,PsiLayer& 
         gE = getEnergyGradient(random,H,PL,HL);
         delta = moment*delta - lr*gE;
         updateParameters(PL,HL,delta);
+        //overlap = getOverlap(PL,HL); 
         cout << "Epoch # " << e << "\tEnergy =  " << Energy;
         cout << "\tError = " << setprecision(8) << deltaEnergy;
+        //cout << "\tAverage Sign = " << avgSign;
+        //cout << "\tOverlap = " << overlap; 
         cout << endl;
     }
 }
 
 
+void NeuralQuantumState::SGD_AdaGrad(MTRand & random, Hamiltonian& H,PsiLayer& PL, HiddenLayer& HL)
+{
+
+    VectorXd gE(n_P);
+    ArrayXd g(n_P);
+    VectorXd delta;
+    ArrayXd deltaARRAY;
+    double overlap;
+    delta.setZero(n_P);
+    deltaARRAY.setZero(n_P); 
+    g.setZero(n_P);
+
+    ArrayXd eps;
+    eps.setOnes(n_P);
+    eps = eps* 0.0000001;
+    
+    for (int e=0; e<epochs; e++) {
+        
+        gE = getEnergyGradient(random,H,PL,HL);
+        
+        g = g + gE.array() * gE.array();
+        deltaARRAY = - lr*gE.array()/(g.sqrt()+eps);
+        delta = deltaARRAY.matrix();
+        updateParameters(PL,HL,delta);
+        cout << "Epoch # " << e << "\tEnergy =  " << Energy;
+        cout << "\tError = " << setprecision(8) << deltaEnergy;
+        //cout << "\tAverage Sign = " << avgSign;
+        //cout << "\tOverlap = " << overlap; 
+        cout << endl;
+    }
+}
+
+
+void NeuralQuantumState::SGD_AdaDelta(MTRand & random, Hamiltonian& H,PsiLayer& PL, HiddenLayer& HL)
+{
+
+    VectorXd gE(n_P);
+    ArrayXd g(n_P);
+    ArrayXd x(n_P);
+    VectorXd delta;
+    ArrayXd deltaARRAY;
+    double overlap;
+    delta.setZero(n_P);
+    deltaARRAY.setZero(n_P); 
+    g.setZero(n_P);
+    x.setZero(n_P);
+    double gamma=0.99;
+    ArrayXd eps;
+    eps.setOnes(n_P);
+    eps = eps* 0.0000001;
+    
+    for (int e=0; e<epochs; e++) {
+        
+        gE = getEnergyGradient(random,H,PL,HL);
+        
+        g = gamma*g + (1-gamma)* gE.array() * gE.array();
+        deltaARRAY = -  ((x.sqrt()+eps)/(g.sqrt()+eps)) * gE.array();
+        x = gamma*x + (1-gamma)* deltaARRAY * deltaARRAY;
+        delta = deltaARRAY.matrix();
+        updateParameters(PL,HL,delta);
+        cout << "Epoch # " << e << "\tEnergy =  " << Energy;
+        cout << "\tError = " << setprecision(8) << deltaEnergy;
+        //cout << "\tAverage Sign = " << avgSign;
+        //cout << "\tOverlap = " << overlap; 
+        cout << endl;
+    }
+}
 
 void NeuralQuantumState::optimizeNQS(MTRand & random,ofstream & file,
                    Hamiltonian& H,PsiLayer& PL, HiddenLayer& HL) 
 {
 
-    
+    if (optimization.compare("SGD") == 0) {
 
+        SGD_Plain(random,H,PL,HL);
+    }
 
+    if (optimization.compare("Momentum") == 0) {
 
+        SGD_Momentum(random,H,PL,HL);
+    }
 
+    if (optimization.compare("AdaGrad") == 0) {
 
+        SGD_AdaGrad(random,H,PL,HL);
+    }
+
+    if (optimization.compare("AdaDelta") == 0) {
+
+        SGD_AdaDelta(random,H,PL,HL);
+    }
+
+    if (optimization.compare("SVRG") == 0) {
+
+        //SVRG(random,H,PL,HL);
+    }
 
 }
 
